@@ -38,8 +38,14 @@
     <!-- 新闻列表 -->
     <section class="news-list-section">
       <div class="news-container">
+        <!-- 列表标题与数量 -->
+        <div class="list-header">
+          <h2 class="list-title">{{ listTitle }}</h2>
+          <span class="list-count">共 {{ filteredNews.length }} 篇文章</span>
+        </div>
+
         <!-- 置顶文章 -->
-        <div v-if="!activeCategory && !searchKeyword && featuredNews" class="featured-article" @click="router.push(`/news/${featuredNews.id}`)">
+        <div v-if="isDefaultView && featuredNews" class="featured-article" @click="router.push(`/news/${featuredNews.id}`)">
           <div class="featured-image">
             <img :src="featuredNews.coverImage" :alt="featuredNews.title" />
           </div>
@@ -58,9 +64,9 @@
 
         <!-- 文章网格 -->
         <div class="news-grid">
-          <article 
-            v-for="news in filteredNews" 
-            :key="news.id" 
+          <article
+            v-for="news in gridNews"
+            :key="news.id"
             class="news-card"
             @click="router.push(`/news/${news.id}`)"
           >
@@ -101,13 +107,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, watch } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { Search } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import type { NewsItem } from '@/types'
 
 const router = useRouter()
+const route = useRoute()
 const activeCategory = ref('')
 const searchKeyword = ref('')
 
@@ -122,6 +129,28 @@ const categories = [
   { label: '行业资讯', value: '行业资讯' },
   { label: '技术分享', value: '技术分享' }
 ]
+
+// 从 URL 恢复筛选条件：刷新后状态可还原；条件清空后 URL 无参数，刷新即回到未筛选状态
+const syncFromRoute = () => {
+  const { category, keyword } = route.query
+  const cat = typeof category === 'string' && categories.some(c => c.value === category) ? category : ''
+  const kw = typeof keyword === 'string' ? keyword : ''
+  if (activeCategory.value !== cat) activeCategory.value = cat
+  if (searchKeyword.value !== kw) searchKeyword.value = kw
+}
+syncFromRoute()
+watch(() => route.query, syncFromRoute)
+
+// 条件变化同步到 URL（替换当前记录，不残留上一次的条件）
+watch([activeCategory, searchKeyword], ([cat, kw]) => {
+  const currentCat = typeof route.query.category === 'string' ? route.query.category : ''
+  const currentKw = typeof route.query.keyword === 'string' ? route.query.keyword : ''
+  if (cat === currentCat && kw === currentKw) return
+  const query: Record<string, string> = {}
+  if (cat) query.category = cat
+  if (kw) query.keyword = kw
+  router.replace({ query })
+})
 
 const newsList = ref<NewsItem[]>([
   {
@@ -206,22 +235,31 @@ const newsList = ref<NewsItem[]>([
 
 const featuredNews = computed(() => newsList.value[0])
 
+// 搜索与筛选共用同一份文章数据，置顶文章也参与检索
 const filteredNews = computed(() => {
-  let result = newsList.value.slice(1)
-  
-  if (activeCategory.value) {
-    result = newsList.value.filter(item => item.category === activeCategory.value)
-  }
-  
-  if (searchKeyword.value) {
-    const keyword = searchKeyword.value.toLowerCase()
-    result = result.filter(item => 
+  const keyword = searchKeyword.value.trim().toLowerCase()
+  return newsList.value.filter(item => {
+    const matchCategory = !activeCategory.value || item.category === activeCategory.value
+    const matchKeyword = !keyword ||
       item.title.toLowerCase().includes(keyword) ||
       item.summary.toLowerCase().includes(keyword)
-    )
-  }
-  
-  return result
+    return matchCategory && matchKeyword
+  })
+})
+
+// 未筛选时置顶文章在顶部精选位展示，列表中不再重复出现
+const isDefaultView = computed(() => !activeCategory.value && !searchKeyword.value.trim())
+
+const gridNews = computed(() =>
+  isDefaultView.value ? filteredNews.value.slice(1) : filteredNews.value
+)
+
+const listTitle = computed(() => {
+  const keyword = searchKeyword.value.trim()
+  if (keyword && activeCategory.value) return `${activeCategory.value} · “${keyword}”的搜索结果`
+  if (keyword) return `“${keyword}”的搜索结果`
+  if (activeCategory.value) return activeCategory.value
+  return '全部文章'
 })
 
 const formatDate = (dateStr: string) => {
@@ -326,6 +364,26 @@ const formatDate = (dateStr: string) => {
 .news-container {
   max-width: $container-max-width;
   margin: 0 auto;
+}
+
+// 列表标题与数量
+.list-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: $spacing-md;
+  margin-bottom: $spacing-xl;
+
+  .list-title {
+    font-size: $font-size-xxl;
+    color: $text-color-primary;
+  }
+
+  .list-count {
+    flex-shrink: 0;
+    font-size: $font-size-sm;
+    color: $text-color-secondary;
+  }
 }
 
 // 置顶文章
