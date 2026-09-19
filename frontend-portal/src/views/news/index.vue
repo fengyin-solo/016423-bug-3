@@ -13,12 +13,12 @@
     <section class="filter-section">
       <div class="filter-container">
         <div class="filter-tabs">
-          <button 
-            v-for="cat in categories" 
+          <button
+            v-for="cat in categories"
             :key="cat.value"
             class="filter-tab"
             :class="{ active: activeCategory === cat.value }"
-            @click="activeCategory = cat.value"
+            @click="handleCategoryChange(cat.value)"
           >
             {{ cat.label }}
           </button>
@@ -38,8 +38,8 @@
     <!-- 新闻列表 -->
     <section class="news-list-section">
       <div class="news-container">
-        <!-- 置顶文章 -->
-        <div v-if="!activeCategory && !searchKeyword && featuredNews" class="featured-article" @click="router.push(`/news/${featuredNews.id}`)">
+        <!-- 置顶文章：仅在无任何筛选条件时展示，避免与下方列表重复 -->
+        <div v-if="!hasFilter && featuredNews" class="featured-article" @click="router.push(`/news/${featuredNews.id}`)">
           <div class="featured-image">
             <img :src="featuredNews.coverImage" :alt="featuredNews.title" />
           </div>
@@ -56,11 +56,17 @@
           </div>
         </div>
 
+        <!-- 列表标题：数量与下方实际展示的文章条数保持一致 -->
+        <div class="news-list-header">
+          <h2 class="news-list-title">{{ listTitle }}</h2>
+          <span class="news-list-count">共 {{ filteredNews.length }} 篇</span>
+        </div>
+
         <!-- 文章网格 -->
         <div class="news-grid">
-          <article 
-            v-for="news in filteredNews" 
-            :key="news.id" 
+          <article
+            v-for="news in filteredNews"
+            :key="news.id"
             class="news-card"
             @click="router.push(`/news/${news.id}`)"
           >
@@ -88,7 +94,7 @@
         <div v-if="filteredNews.length === 0" class="empty-state">
           <el-icon :size="64"><Document /></el-icon>
           <h3>暂无相关文章</h3>
-          <p>换个关键词试试吧</p>
+          <p>换个关键词或分类试试吧</p>
         </div>
 
         <!-- 加载更多 -->
@@ -135,7 +141,8 @@ const newsList = ref<NewsItem[]>([
     viewCount: 1256,
     publishTime: '2024-03-15',
     createTime: '2024-03-15',
-    updateTime: '2024-03-15'
+    updateTime: '2024-03-15',
+    isFeatured: true
   },
   {
     id: 2,
@@ -204,24 +211,50 @@ const newsList = ref<NewsItem[]>([
   }
 ])
 
-const featuredNews = computed(() => newsList.value[0])
+// 是否存在任何筛选条件（分类或关键词）
+const hasFilter = computed(() => !!(activeCategory.value || searchKeyword.value))
 
+// 置顶文章
+const featuredNews = computed(() => newsList.value.find(item => item.isFeatured))
+
+// 切换分类时清空搜索词，保证来回切换不残留上一次的条件和结果
+const handleCategoryChange = (category: string) => {
+  activeCategory.value = category
+  searchKeyword.value = ''
+}
+
+// 搜索与筛选共用同一份取数：始终基于全量文章依次应用分类、关键词条件
 const filteredNews = computed(() => {
-  let result = newsList.value.slice(1)
-  
+  let result = newsList.value
+
   if (activeCategory.value) {
-    result = newsList.value.filter(item => item.category === activeCategory.value)
+    result = result.filter(item => item.category === activeCategory.value)
   }
-  
+
   if (searchKeyword.value) {
-    const keyword = searchKeyword.value.toLowerCase()
-    result = result.filter(item => 
-      item.title.toLowerCase().includes(keyword) ||
-      item.summary.toLowerCase().includes(keyword)
-    )
+    const keyword = searchKeyword.value.trim().toLowerCase()
+    if (keyword) {
+      result = result.filter(item =>
+        item.title.toLowerCase().includes(keyword) ||
+        item.summary.toLowerCase().includes(keyword)
+      )
+    }
   }
-  
+
+  // 无筛选时置顶文章已在顶部精选区展示，从网格中剔除以免重复；
+  // 有筛选时它和普通文章一样参与搜索/筛选，出现在网格里
+  if (!hasFilter.value && featuredNews.value) {
+    result = result.filter(item => item.id !== featuredNews.value!.id)
+  }
+
   return result
+})
+
+// 列表标题随当前筛选条件变化，数量由 filteredNews 派生
+const listTitle = computed(() => {
+  if (searchKeyword.value) return `搜索结果：${searchKeyword.value.trim()}`
+  if (activeCategory.value) return activeCategory.value
+  return '全部文章'
 })
 
 const formatDate = (dateStr: string) => {
@@ -408,6 +441,24 @@ const formatDate = (dateStr: string) => {
       color: $text-color-secondary;
     }
   }
+}
+
+// 列表标题
+.news-list-header {
+  display: flex;
+  align-items: baseline;
+  gap: $spacing-md;
+  margin-bottom: $spacing-xl;
+}
+
+.news-list-title {
+  font-size: $font-size-xxl;
+  font-weight: 600;
+}
+
+.news-list-count {
+  font-size: $font-size-sm;
+  color: $text-color-secondary;
 }
 
 // 文章网格

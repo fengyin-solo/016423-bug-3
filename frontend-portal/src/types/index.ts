@@ -30,6 +30,8 @@ export interface NewsItem {
   publishTime: string
   createTime: string
   updateTime: string
+  // 是否置顶（精选）文章
+  isFeatured?: boolean
 }
 
 // ==================== 产品相关 ====================
